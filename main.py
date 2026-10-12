@@ -319,11 +319,6 @@ async def favicon(_: Request) -> Response:
     return FileResponse(STATIC_DIR / "favicon.ico", media_type="image/x-icon")
 
 
-@mcp.custom_route("/logo.png", methods=["GET"])
-async def logo(_: Request) -> Response:
-    return FileResponse(STATIC_DIR / "logo.png", media_type="image/png")
-
-
 @mcp.custom_route("/icon.png", methods=["GET"])
 async def icon(_: Request) -> Response:
     return FileResponse(STATIC_DIR / "icon.png", media_type="image/png")

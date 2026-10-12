@@ -6,20 +6,25 @@ Ren server-rendret HTML uten JS. All variabel tekst må escapes av kalleren.
 from __future__ import annotations
 
 import html
+from pathlib import Path
+
+# Autoajour-ordmerket (fra frontend/src/components/Logo.tsx), bygget inn inline.
+LOGO_SVG = (Path(__file__).parent / "static" / "logo.svg").read_text()
 
 CSS = """
 :root{--bg:#f8fafc;--card:#fff;--border:#e2e8f0;--fg:#0f172a;--muted:#64748b;--soft:#f1f5f9;
---btn:#0f172a;--btn-fg:#fff;--btn-hover:#1e293b;--danger:#b91c1c;--logo-filter:none}
+--btn:#0f172a;--btn-fg:#fff;--btn-hover:#1e293b;--danger:#b91c1c;--logo:#3B2A20;--mark:#D9480F}
 @media (prefers-color-scheme:dark){:root{--bg:#020617;--card:#0f172a;--border:#1e293b;--fg:#f1f5f9;
 --muted:#94a3b8;--soft:#1e293b;--btn:#f1f5f9;--btn-fg:#0f172a;--btn-hover:#fff;--danger:#f87171;
---logo-filter:invert(1)}}
+--logo:#f8fafc;--mark:#F27B30}}
 *{box-sizing:border-box}
 body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem 1rem;
 background:var(--bg);color:var(--fg);font:15px/1.55 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
 .wrap{width:100%;max-width:28rem}
 .card{background:var(--card);border:1px solid var(--border);border-radius:1rem;padding:2rem;
 box-shadow:0 10px 25px -5px rgb(15 23 42/.08),0 4px 10px -6px rgb(15 23 42/.08)}
-.logo{display:block;width:150px;height:auto;margin:0 auto 1.5rem;filter:var(--logo-filter)}
+.logo{display:block;width:210px;height:auto;margin:0 auto 1.5rem;color:var(--logo)}
+.mark-fill{fill:var(--mark)}.mark-stroke{stroke:var(--mark)}
 h1{font-size:1.15rem;font-weight:600;text-align:center;margin:0 0 .5rem;letter-spacing:-.01em}
 h2{font-size:1rem;font-weight:600;margin:1.75rem 0 .5rem}
 p{margin:.5rem 0}.muted{color:var(--muted);font-size:.875rem}.center{text-align:center}
@@ -48,7 +53,7 @@ def render(title: str, body_html: str) -> str:
         f"<title>{html.escape(title)} – Autoajour</title>"
         "<link rel=icon href='/favicon.ico' sizes=any><link rel=icon type=image/png href='/icon.png'>"
         f"<style>{CSS}</style><body><main class=wrap><div class=card>"
-        "<img class=logo src='/logo.png' alt='Autoajour'>"
+        f"{LOGO_SVG}"
         f"<h1>{html.escape(title)}</h1>{body_html}</div>"
         "<p class=foot>Fiken MCP fra Autoajour · <a href='/konto'>Mine tilkoblinger</a></p>"
         "</main></body></html>"
