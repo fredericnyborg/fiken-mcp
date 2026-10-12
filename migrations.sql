@@ -60,3 +60,13 @@ CREATE TABLE IF NOT EXISTS mcp_tokens (
 
 CREATE INDEX IF NOT EXISTS mcp_tokens_grant_idx ON mcp_tokens (grant_id);
 CREATE INDEX IF NOT EXISTS mcp_grants_user_idx ON mcp_grants (user_id);
+
+-- Bruksstatistikk for adminsiden: kun aggregerte tall per dag og verktøy.
+-- Ingen bruker-ID og ingen regnskapsdata (jf. Fiken-avtalen om sammenstilling).
+CREATE TABLE IF NOT EXISTS usage_daily (
+    day     date NOT NULL,
+    tool    text NOT NULL,
+    calls   integer NOT NULL DEFAULT 0,
+    errors  integer NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, tool)
+);

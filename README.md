@@ -25,6 +25,14 @@ med `state` = `web_<nonce>.<hmac>` + nettleserbundet cookie; sesjonen er en HMAC
 cookie (1 t). POST-skjemaene krever same-origin + CSRF-token. Fiken-brukere uten tilkoblinger
 lagres ikke.
 
+## Statistikk (Autoajour admin-konsoll)
+
+Statistikken vises i Autoajours admin-konsoll (fanen «Fiken MCP», kun plattform-admins).
+Autoajour-backenden henter tallene fra `GET /admin/api/stats` med
+`Authorization: Bearer <FIKEN_MCP_STATS_TOKEN>` – samme nysky-secret i begge apper.
+Uten token (eller kortere enn 32 tegn) er endepunktet avslått. Verktøykall telles
+aggregert per dag og verktøy (`usage_daily`) uten bruker-ID eller regnskapsdata.
+
 ## Auth-flyt
 
 ```
@@ -60,6 +68,8 @@ Claude ──/mcp Bearer──▶ verktøy → Fiken API med brukerens token (fo
 |---|---|
 | `main.py` | FastMCP-app, samtykkeside, `/fiken/callback`, `/konto`, `/health` |
 | `app/account.py` | Kontosiden: innlogging, sesjon, oversikt, tilbaketrekking |
+| `app/admin.py` | Statistikk-API for Autoajour + telling av verktøykall |
+| `app/pages.py` | Felles HTML-mal (Autoajour-stil) |
 | `app/mcp_auth.py` | OAuth-server for MCP-klienter + Fiken-innlogging |
 | `app/fiken_oauth.py` | Fiken OAuth: state, authorize-URL, token/refresh, token-blob |
 | `app/fiken_client.py` | Fiken API-klient: token-fornyelse, serialisering, retry, paginering |

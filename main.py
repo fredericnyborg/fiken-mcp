@@ -27,7 +27,7 @@ from starlette.responses import (
     Response,
 )
 
-from app import account, config, fiken_oauth, pages, tools
+from app import account, admin, config, fiken_oauth, pages, tools
 from app.mcp_auth import (
     CSRF_COOKIE,
     LOGIN_COOKIE,
@@ -56,6 +56,7 @@ mcp = FastMCP(
     icons=[Icon(src=f"{config.public_url()}/icon.png", mimeType="image/png", sizes=["512x512"])],
 )
 tools.register(mcp)
+mcp.add_middleware(admin.UsageMiddleware())
 
 
 SECURITY_HEADERS = {
@@ -304,6 +305,16 @@ async def account_logout(request: Request) -> Response:
     resp = error or RedirectResponse("/konto", status_code=303)
     resp.delete_cookie(account.SESSION_COOKIE, path="/konto")
     return resp
+
+
+# -- statistikk for Autoajour-admin ---------------------------------------------
+
+
+@mcp.custom_route("/admin/api/stats", methods=["GET"])
+async def admin_stats(request: Request) -> Response:
+    if not admin.stats_token_ok(request.headers.get("authorization")):
+        return JSONResponse({"error": "unauthorized"}, status_code=401, headers={"Cache-Control": "no-store"})
+    return JSONResponse(await admin.stats(), headers={"Cache-Control": "no-store"})
 
 
 @mcp.custom_route("/health", methods=["GET"])

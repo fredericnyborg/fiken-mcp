@@ -16,6 +16,7 @@ secrets = [
   "FIKEN_CLIENT_ID",
   "FIKEN_CLIENT_SECRET",
   "TOKEN_ENCRYPTION_KEY",   # 32 byte base64 (AES-256-GCM for Fiken-tokens)
+  "FIKEN_MCP_STATS_TOKEN",  # deles med autoajour-api; gir tilgang til /admin/api/stats
 ]
 
 # Eget subdomene. DNS hos Domeneshop: CNAME fiken-mcp → inn.nysky.no.
