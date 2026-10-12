@@ -27,7 +27,7 @@ from starlette.responses import (
     Response,
 )
 
-from app import account, config, fiken_oauth, pages, tools
+from app import account, admin, config, fiken_oauth, pages, tools
 from app.mcp_auth import (
     CSRF_COOKIE,
     LOGIN_COOKIE,
@@ -56,6 +56,7 @@ mcp = FastMCP(
     icons=[Icon(src=f"{config.public_url()}/icon.png", mimeType="image/png", sizes=["512x512"])],
 )
 tools.register(mcp)
+mcp.add_middleware(admin.UsageMiddleware())
 
 
 SECURITY_HEADERS = {
@@ -66,9 +67,11 @@ SECURITY_HEADERS = {
 }
 
 
-def _page(title: str, message: str, status: int, extra_html: str = "") -> HTMLResponse:
+def _page(
+    title: str, message: str, status: int, extra_html: str = "", wide: bool = False
+) -> HTMLResponse:
     body = (f"<p class='muted center'>{html.escape(message)}</p>" if message else "") + extra_html
-    return HTMLResponse(pages.render(title, body), status_code=status, headers=SECURITY_HEADERS)
+    return HTMLResponse(pages.render(title, body, wide), status_code=status, headers=SECURITY_HEADERS)
 
 
 def _same_origin(request: Request) -> bool:
@@ -151,6 +154,8 @@ async def fiken_callback(request: Request) -> Response:
     request_id = fiken_oauth.verify_state(q.get("state") or "", config.fiken_client_secret())
     if request_id is not None and account.is_web_state(request_id):
         return await _web_login_callback(request, request_id)
+    if request_id is not None and admin.is_admin_state(request_id):
+        return await _admin_login_callback(request, request_id)
     try:
         target = await complete_fiken_login(
             q.get("code"), q.get("state"), q.get("error"), request.cookies.get(LOGIN_COOKIE)
@@ -303,6 +308,122 @@ async def account_logout(request: Request) -> Response:
     _user_id, error = await _check_post(request)
     resp = error or RedirectResponse("/konto", status_code=303)
     resp.delete_cookie(account.SESSION_COOKIE, path="/konto")
+    return resp
+
+
+# -- adminside ------------------------------------------------------------------
+
+
+async def _admin_login_callback(request: Request, request_id: str) -> Response:
+    q = request.query_params
+    try:
+        _tokens, fiken_user = await account.fiken_login(
+            q.get("code"), request_id, q.get("error"), request.cookies.get(WEB_LOGIN_COOKIE)
+        )
+    except LoginError as exc:
+        return _page("Innlogging feilet", str(exc), 400)
+    except Exception:
+        log.exception("Admin-innlogging feilet")
+        return _page("Innlogging feilet", "Uventet feil. Prøv igjen senere.", 500)
+    email = (fiken_user.get("email") or "").strip().lower()
+    if not admin.is_admin(email):
+        log.warning("Avvist admin-innlogging")
+        resp = _page("Ingen tilgang", "Denne Fiken-brukeren har ikke tilgang til adminsiden.", 403)
+    else:
+        resp = RedirectResponse("/admin", status_code=303)
+        resp.set_cookie(
+            admin.SESSION_COOKIE, admin.make_session(email), max_age=admin.SESSION_TTL_SECONDS,
+            path="/admin", secure=True, httponly=True, samesite="lax",
+        )
+    resp.delete_cookie(WEB_LOGIN_COOKIE, path="/fiken/callback")
+    return resp
+
+
+def _rows(items: list[dict], cols: list[tuple[str, str, bool]]) -> str:
+    """Enkel tabell. cols = [(nøkkel, overskrift, tall)]."""
+    if not items:
+        return "<p class=muted>Ingen data ennå.</p>"
+    head = "".join(f"<th{' class=num' if num else ''}>{html.escape(h)}</th>" for _, h, num in cols)
+    body = "".join(
+        "<tr>" + "".join(
+            f"<td{' class=num' if num else ''}>{html.escape(str(r[k]))}</td>" for k, _, num in cols
+        ) + "</tr>"
+        for r in items
+    )
+    return f"<table><tr>{head}</tr>{body}</table>"
+
+
+@mcp.custom_route("/admin", methods=["GET"])
+async def admin_page(request: Request) -> Response:
+    cookie = request.cookies.get(admin.SESSION_COOKIE) or ""
+    email = admin.read_session(cookie)
+    if email is None:
+        return _page(
+            "Admin",
+            "Logg inn med en Fiken-bruker som har admintilgang.",
+            200,
+            "<div class=row><a class='btn btn-primary' href='/admin/login'>Logg inn med Fiken</a></div>",
+        )
+    data = await admin.stats()
+    t = data["totals"]
+    error_rate = (
+        f"{t['errors_30d'] / t['calls_30d'] * 100:.1f} %".replace(".", ",") if t["calls_30d"] else "–"
+    )
+    tiles = "".join(
+        f"<div class=tile><div class=n>{html.escape(str(n))}</div><div class=l>{html.escape(label)}</div></div>"
+        for n, label in [
+            (t["users"], "Brukere totalt"),
+            (t["connected_users"], "Med aktiv Fiken-tilgang"),
+            (t["active_grants"], "Aktive tilkoblinger"),
+            (t["active_7d"], "Aktive siste 7 dager"),
+            (t["active_30d"], "Aktive siste 30 dager"),
+            (t["calls_30d"], "Verktøykall siste 30 d"),
+            (error_rate, "Feilrate siste 30 d"),
+        ]
+    )
+    for r in data["daily"]:
+        r["day"] = r["day"].strftime("%d.%m")
+    for r in data["new_users"]:
+        r["week"] = "Uke " + r["week"].strftime("%V")
+    csrf = html.escape(account.csrf_token(cookie))
+    body = (
+        f"<p class='muted center'>Innlogget som {html.escape(email)} · tall oppdateres ved innlasting</p>"
+        f"<div class=tiles>{tiles}</div>"
+        "<h2>Verktøykall siste 14 dager</h2>"
+        + _rows(data["daily"], [("day", "Dag", False), ("calls", "Kall", True), ("errors", "Feil", True)])
+        + "<h2>Mest brukte verktøy (30 dager)</h2>"
+        + _rows(data["top_tools"], [("tool", "Verktøy", False), ("calls", "Kall", True), ("errors", "Feil", True)])
+        + "<h2>Nye brukere per uke</h2>"
+        + _rows(data["new_users"], [("week", "Uke", False), ("n", "Nye", True)])
+        + "<h2>Aktive tilkoblinger per klient</h2>"
+        + _rows(data["clients"], [("client", "Klient", False), ("n", "Antall", True)])
+        + f"<form method=post action='/admin/logout'><input type=hidden name=csrf value='{csrf}'>"
+        "<div class=row><button class='btn btn-outline'>Logg ut</button></div></form>"
+    )
+    return _page("Fiken MCP – statistikk", "", 200, body, wide=True)
+
+
+@mcp.custom_route("/admin/login", methods=["GET"])
+async def admin_login(_: Request) -> Response:
+    url, binding, _nonce = account.start_login(admin.ADMIN_PREFIX)
+    resp = RedirectResponse(url, status_code=303)
+    resp.set_cookie(
+        WEB_LOGIN_COOKIE, binding, max_age=REQUEST_TTL_SECONDS, path="/fiken/callback",
+        secure=True, httponly=True, samesite="lax",
+    )
+    return resp
+
+
+@mcp.custom_route("/admin/logout", methods=["POST"])
+async def admin_logout(request: Request) -> Response:
+    cookie = request.cookies.get(admin.SESSION_COOKIE) or ""
+    form = await request.form()
+    if not _same_origin(request) or not hmac.compare_digest(
+        str(form.get("csrf") or ""), account.csrf_token(cookie)
+    ):
+        return _page("Ugyldig forespørsel", "Last siden på nytt og prøv igjen.", 403)
+    resp = RedirectResponse("/admin", status_code=303)
+    resp.delete_cookie(admin.SESSION_COOKIE, path="/admin")
     return resp
 
 

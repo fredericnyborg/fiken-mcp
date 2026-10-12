@@ -16,6 +16,7 @@ secrets = [
   "FIKEN_CLIENT_ID",
   "FIKEN_CLIENT_SECRET",
   "TOKEN_ENCRYPTION_KEY",   # 32 byte base64 (AES-256-GCM for Fiken-tokens)
+  "ADMIN_EMAILS",           # kommaseparerte Fiken-e-poster med tilgang til /admin
 ]
 
 # Eget subdomene. DNS hos Domeneshop: CNAME fiken-mcp → inn.nysky.no.
