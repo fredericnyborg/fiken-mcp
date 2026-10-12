@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hmac
 import html
+import json
 import logging
 import secrets
 import uuid
@@ -23,6 +24,7 @@ from starlette.responses import (
     FileResponse,
     HTMLResponse,
     JSONResponse,
+    PlainTextResponse,
     RedirectResponse,
     Response,
 )
@@ -335,15 +337,114 @@ async def icon(_: Request) -> Response:
     return FileResponse(STATIC_DIR / "icon.png", media_type="image/png")
 
 
+INDEX_DESCRIPTION = (
+    "Gratis MCP-server for Fiken. Koble Claude eller en annen AI-assistent til Fiken med full "
+    "lese- og skrivetilgang: fakturaer, kjøp, salg, kontakter, bilag og mer. Logg inn med Fiken."
+)
+
+
+def _index_html() -> str:
+    url = html.escape(config.public_url())
+    return f"""
+<p class=center>Gratis MCP-server som gir Claude og andre AI-assistenter <b>full lese- og
+skrivetilgang</b> til regnskapet ditt i Fiken.</p>
+
+<h2>Kom i gang</h2>
+<ol>
+<li>Åpne Claude → <b>Innstillinger → Connectors → Legg til egendefinert</b>.</li>
+<li>Lim inn <code>{url}/mcp</code></li>
+<li>Logg inn med Fiken og godkjenn. Ferdig – ingen egen konto trengs.</li>
+</ol>
+
+<h2>Hva kan AI-assistenten gjøre?</h2>
+<ul>
+<li>Lage, sende og kreditere fakturaer, tilbud og ordrebekreftelser</li>
+<li>Registrere kjøp, salg, betalinger og bilag – også med vedlegg</li>
+<li>Slå opp og oppdatere kontakter, produkter og prosjekter</li>
+<li>Hente kontoplan, saldoer, bilagsjournal og banktransaksjoner</li>
+<li>Føre timer og lage fakturautkast fra timeføringer</li>
+</ul>
+<p class=muted>Alle 150+ endepunkter i Fiken API v2 er tilgjengelige som verktøy.</p>
+
+<h2>Sikkerhet</h2>
+<ul>
+<li>Du logger inn direkte hos Fiken – vi ser aldri passordet ditt.</li>
+<li>Fiken-nøklene lagres kryptert (AES-256-GCM) på norsk infrastruktur.</li>
+<li>Du ser og trekker tilbake tilganger under <a href='/konto'>Mine tilkoblinger</a>.</li>
+</ul>
+
+<div class=row><a class='btn btn-primary' href='/konto'>Mine tilkoblinger</a>
+<a class='btn btn-outline' href='https://autoajour.no'>Om Autoajour</a></div>
+"""
+
+
+def _index_jsonld() -> str:
+    data = {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Fiken MCP",
+        "applicationCategory": "BusinessApplication",
+        "operatingSystem": "Web",
+        "url": config.public_url() + "/",
+        "description": INDEX_DESCRIPTION,
+        "inLanguage": "nb",
+        "offers": {"@type": "Offer", "price": "0", "priceCurrency": "NOK"},
+        "publisher": {"@type": "Organization", "name": "Autoajour", "url": "https://autoajour.no"},
+    }
+    # `</` escapes så JSON-en ikke kan lukke script-taggen.
+    payload = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
+    return f"<script type=application/ld+json>{payload}</script>"
+
+
 @mcp.custom_route("/", methods=["GET"])
 async def index(_: Request) -> Response:
-    return _page(
-        "Fiken MCP",
-        "MCP-server for Fiken. Legg til https://fiken-mcp.autoajour.no/mcp som connector i "
-        "Claude (eller en annen MCP-klient) og logg inn med Fiken. Ingen egen konto trengs.",
-        200,
-        "<div class=row><a class='btn btn-outline' href='/konto'>Mine tilkoblinger</a></div>",
+    base = config.public_url()
+    title = "Fiken MCP – koble Claude til Fiken"
+    og = (
+        f"<meta property=og:title content=\"{html.escape(title)}\">"
+        f"<meta property=og:description content=\"{html.escape(INDEX_DESCRIPTION)}\">"
+        f"<meta property=og:url content=\"{html.escape(base)}/\">"
+        "<meta property=og:type content=website><meta property=og:locale content=nb_NO>"
+        f"<meta property=og:image content=\"{html.escape(base)}/icon.png\">"
     )
+    page = pages.render(
+        "Fiken MCP",
+        _index_html(),
+        description=INDEX_DESCRIPTION,
+        indexable=True,
+        head_title=f"{title} (gratis) – Autoajour",
+        canonical=base + "/",
+        extra_head=og + _index_jsonld(),
+        wide=True,
+    )
+    # Forsiden er offentlig og lik for alle: tillat caching (de andre sidene er no-store).
+    headers = {**SECURITY_HEADERS, "Cache-Control": "public, max-age=3600"}
+    return HTMLResponse(page, headers=headers)
+
+
+@mcp.custom_route("/robots.txt", methods=["GET"])
+async def robots(_: Request) -> Response:
+    body = (
+        "User-agent: *\n"
+        "Allow: /$\n"
+        "Disallow: /konto\n"
+        "Disallow: /consent/\n"
+        "Disallow: /fiken/\n"
+        "Disallow: /admin/\n"
+        "Disallow: /mcp\n"
+        f"\nSitemap: {config.public_url()}/sitemap.xml\n"
+    )
+    return PlainTextResponse(body)
+
+
+@mcp.custom_route("/sitemap.xml", methods=["GET"])
+async def sitemap(_: Request) -> Response:
+    body = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+        f"<url><loc>{html.escape(config.public_url())}/</loc></url></urlset>"
+    )
+    return Response(body, media_type="application/xml")
 
 
 app = mcp.http_app(path="/mcp", stateless_http=True)

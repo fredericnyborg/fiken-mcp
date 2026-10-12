@@ -28,7 +28,8 @@ box-shadow:0 10px 25px -5px rgb(15 23 42/.08),0 4px 10px -6px rgb(15 23 42/.08)}
 h1{font-size:1.15rem;font-weight:600;text-align:center;margin:0 0 .5rem;letter-spacing:-.01em}
 h2{font-size:1rem;font-weight:600;margin:1.75rem 0 .5rem}
 p{margin:.5rem 0}.muted{color:var(--muted);font-size:.875rem}.center{text-align:center}
-ul{margin:1rem 0;padding-left:1.25rem;font-size:.875rem}li{margin:.25rem 0}
+ul,ol{margin:1rem 0;padding-left:1.25rem;font-size:.875rem}li{margin:.25rem 0}
+code{background:var(--soft);border-radius:.3rem;padding:.1rem .35rem;font-size:.85em}
 .info{background:var(--soft);border-radius:.6rem;padding:.75rem;font-size:.8rem;color:var(--muted);margin-top:1rem}
 .info b{color:var(--fg);font-weight:500}
 .row{display:flex;gap:.75rem;margin-top:1.5rem}
@@ -45,16 +46,36 @@ form{margin:0}
 """
 
 
-def render(title: str, body_html: str) -> str:
-    """Hel side: logo + kort med innhold. `body_html` er ferdig escapet HTML."""
+def render(
+    title: str,
+    body_html: str,
+    *,
+    description: str | None = None,
+    indexable: bool = False,
+    head_title: str | None = None,
+    canonical: str | None = None,
+    extra_head: str = "",
+    wide: bool = False,
+) -> str:
+    """Hel side: logo + kort med innhold. `body_html` og `extra_head` er ferdig escapet HTML.
+
+    Sider er `noindex` som standard (samtykke, /konto, feil); kun forsiden indekseres.
+    """
+    meta = "" if indexable else "<meta name=robots content='noindex,nofollow'>"
+    if description:
+        meta += f"<meta name=description content=\"{html.escape(description)}\">"
+    if canonical:
+        meta += f"<link rel=canonical href=\"{html.escape(canonical)}\">"
+    wrap_style = " style='max-width:40rem'" if wide else ""
     return (
         "<!doctype html><html lang=no><meta charset=utf-8>"
         "<meta name=viewport content='width=device-width,initial-scale=1'>"
-        f"<title>{html.escape(title)} – Autoajour</title>"
+        f"<title>{html.escape(head_title or f'{title} – Autoajour')}</title>{meta}{extra_head}"
         "<link rel=icon href='/favicon.ico' sizes=any><link rel=icon type=image/png href='/icon.png'>"
-        f"<style>{CSS}</style><body><main class=wrap><div class=card>"
+        f"<style>{CSS}</style><body><main class=wrap{wrap_style}><div class=card>"
         f"{LOGO_SVG}"
         f"<h1>{html.escape(title)}</h1>{body_html}</div>"
-        "<p class=foot>Fiken MCP fra Autoajour · <a href='/konto'>Mine tilkoblinger</a></p>"
+        "<p class=foot>Fiken MCP fra <a href='https://autoajour.no'>Autoajour</a> · "
+        "<a href='/konto'>Mine tilkoblinger</a></p>"
         "</main></body></html>"
     )
