@@ -1,18 +1,18 @@
-"""Adminside /admin: bruksstatistikk for eieren av tjenesten.
+"""Bruksstatistikk for Autoajours admin-konsoll.
 
-Innlogging med Fiken (samme flyt som /konto, state-prefiks «adm_»). Bare e-poster i
-ADMIN_EMAILS (kommaseparert nysky-secret) slipper inn. Sesjonen er en HMAC-signert
-cookie med e-post og utløp. Statistikken er aggregert; verktøykall telles per dag og
-verktøy uten bruker-ID (UsageMiddleware).
+GET /admin/api/stats returnerer aggregerte tall som JSON. Endepunktet krever
+`Authorization: Bearer <FIKEN_MCP_STATS_TOKEN>` (nysky-secret, samme verdi i
+Autoajour-backenden). Tilgangen til selve visningen styres i Autoajour
+(plattform-admin). Uten satt token er endepunktet avslått.
+
+Verktøykall telles per dag og verktøy uten bruker-ID (UsageMiddleware).
 """
 
 from __future__ import annotations
 
-import hashlib
 import hmac
 import logging
 import os
-import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -20,58 +20,17 @@ import mcp.types as mt
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools import ToolResult
 
-from app import config, db
-
-ADMIN_PREFIX = "adm_"
-SESSION_COOKIE = "fiken_mcp_admin"
-SESSION_TTL_SECONDS = 60 * 60
+from app import db
 
 log = logging.getLogger("fiken-mcp")
 
 
-def admin_emails() -> set[str]:
-    raw = os.getenv("ADMIN_EMAILS", "")
-    return {e.strip().lower() for e in raw.split(",") if e.strip()}
-
-
-def is_admin(email: str) -> bool:
-    return email.strip().lower() in admin_emails()
-
-
-def is_admin_state(request_id: str) -> bool:
-    return request_id.startswith(ADMIN_PREFIX)
-
-
-# -- sesjon ---------------------------------------------------------------------
-
-
-def _sign(value: str) -> str:
-    key = hmac.new(config.fiken_client_secret().encode(), b"admin-session", hashlib.sha256).digest()
-    return hmac.new(key, value.encode(), hashlib.sha256).hexdigest()
-
-
-def make_session(email: str, now: float | None = None) -> str:
-    exp = int((now if now is not None else time.time()) + SESSION_TTL_SECONDS)
-    payload = f"{email}|{exp}"
-    return f"{payload}|{_sign(payload)}"
-
-
-def read_session(cookie: str | None, now: float | None = None) -> str | None:
-    """E-post hvis sesjonen er gyldig, ikke utløpt og e-posten fortsatt er admin."""
-    if not cookie:
-        return None
-    parts = cookie.rsplit("|", 2)
-    if len(parts) != 3:
-        return None
-    email, exp, sig = parts
-    if not hmac.compare_digest(sig, _sign(f"{email}|{exp}")):
-        return None
-    try:
-        if int(exp) < (now if now is not None else time.time()):
-            return None
-    except ValueError:
-        return None
-    return email if is_admin(email) else None
+def stats_token_ok(authorization: str | None) -> bool:
+    """Sjekk Bearer-token mot FIKEN_MCP_STATS_TOKEN (konstant tid). Usatt token = avslått."""
+    expected = os.getenv("FIKEN_MCP_STATS_TOKEN", "")
+    if len(expected) < 32 or not authorization or not authorization.startswith("Bearer "):
+        return False
+    return hmac.compare_digest(authorization[len("Bearer "):].strip(), expected)
 
 
 # -- telling av verktøykall --------------------------------------------------------
@@ -145,8 +104,11 @@ async def stats() -> dict[str, Any]:
         )
     return {
         "totals": dict(totals),
-        "new_users": [dict(r) for r in new_users],
-        "daily": [dict(r) for r in daily],
+        "new_users": [{"week": r["week"].isoformat(), "n": r["n"]} for r in new_users],
+        "daily": [
+            {"day": r["day"].isoformat(), "calls": r["calls"], "errors": r["errors"]} for r in daily
+        ],
         "top_tools": [dict(r) for r in top_tools],
         "clients": [dict(r) for r in clients],
+        "generated_at": datetime.now(UTC).isoformat(),
     }

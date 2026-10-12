@@ -42,26 +42,17 @@ padding:.65rem 1rem;font-family:inherit;font-weight:500;font-size:.875rem;line-h
 gap:.75rem;align-items:center;justify-content:space-between}.grant form{margin:0}
 .foot{text-align:center;font-size:.75rem;color:var(--muted);margin-top:1rem}.foot a{color:inherit}
 form{margin:0}
-.wide{max-width:46rem}
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr));gap:.6rem;margin:1rem 0}
-.tile{border:1px solid var(--border);border-radius:.6rem;padding:.7rem .8rem}
-.tile .n{font-size:1.5rem;font-weight:600;line-height:1.2;font-variant-numeric:tabular-nums}
-.tile .l{font-size:.75rem;color:var(--muted)}
-table{width:100%;border-collapse:collapse;font-size:.85rem;margin:.25rem 0 .5rem}
-th,td{text-align:left;padding:.35rem .25rem;border-bottom:1px solid var(--border)}
-th{font-weight:500;color:var(--muted);font-size:.75rem}
-td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 """
 
 
-def render(title: str, body_html: str, wide: bool = False) -> str:
+def render(title: str, body_html: str) -> str:
     """Hel side: logo + kort med innhold. `body_html` er ferdig escapet HTML."""
     return (
         "<!doctype html><html lang=no><meta charset=utf-8>"
         "<meta name=viewport content='width=device-width,initial-scale=1'>"
         f"<title>{html.escape(title)} – Autoajour</title>"
         "<link rel=icon href='/favicon.ico' sizes=any><link rel=icon type=image/png href='/icon.png'>"
-        f"<style>{CSS}</style><body><main class='wrap{' wide' if wide else ''}'><div class=card>"
+        f"<style>{CSS}</style><body><main class=wrap><div class=card>"
         f"{LOGO_SVG}"
         f"<h1>{html.escape(title)}</h1>{body_html}</div>"
         "<p class=foot>Fiken MCP fra Autoajour · <a href='/konto'>Mine tilkoblinger</a></p>"

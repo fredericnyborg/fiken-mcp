@@ -25,17 +25,13 @@ med `state` = `web_<nonce>.<hmac>` + nettleserbundet cookie; sesjonen er en HMAC
 cookie (1 t). POST-skjemaene krever same-origin + CSRF-token. Fiken-brukere uten tilkoblinger
 lagres ikke.
 
-## Statistikk (`/admin`)
+## Statistikk (Autoajour admin-konsoll)
 
-`https://fiken-mcp.autoajour.no/admin` – kun for e-poster i nysky-secreten `ADMIN_EMAILS`
-(kommaseparert, Fiken-e-posten du logger inn med). Viser antall brukere, aktive tilkoblinger,
-aktive brukere siste 7/30 dager, verktøykall per dag, mest brukte verktøy, feilrate, nye
-brukere per uke og tilkoblinger per klient. Verktøykall telles aggregert per dag og verktøy
-(`usage_daily`) uten bruker-ID eller regnskapsdata.
-
-```bash
-read -rp "ADMIN_EMAILS: " V && printf %s "$V" | node "$NYSKY" secret put ADMIN_EMAILS; unset V
-```
+Statistikken vises i Autoajours admin-konsoll (fanen «Fiken MCP», kun plattform-admins).
+Autoajour-backenden henter tallene fra `GET /admin/api/stats` med
+`Authorization: Bearer <FIKEN_MCP_STATS_TOKEN>` – samme nysky-secret i begge apper.
+Uten token (eller kortere enn 32 tegn) er endepunktet avslått. Verktøykall telles
+aggregert per dag og verktøy (`usage_daily`) uten bruker-ID eller regnskapsdata.
 
 ## Auth-flyt
 
@@ -72,7 +68,7 @@ Claude ──/mcp Bearer──▶ verktøy → Fiken API med brukerens token (fo
 |---|---|
 | `main.py` | FastMCP-app, samtykkeside, `/fiken/callback`, `/konto`, `/health` |
 | `app/account.py` | Kontosiden: innlogging, sesjon, oversikt, tilbaketrekking |
-| `app/admin.py` | Adminside: tilgang, sesjon, statistikk, telling av verktøykall |
+| `app/admin.py` | Statistikk-API for Autoajour + telling av verktøykall |
 | `app/pages.py` | Felles HTML-mal (Autoajour-stil) |
 | `app/mcp_auth.py` | OAuth-server for MCP-klienter + Fiken-innlogging |
 | `app/fiken_oauth.py` | Fiken OAuth: state, authorize-URL, token/refresh, token-blob |

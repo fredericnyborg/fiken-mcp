@@ -2,41 +2,24 @@ import pytest
 
 from app import admin
 
+TOKEN = "x" * 40
+
 
 @pytest.fixture(autouse=True)
-def admins(monkeypatch):
-    monkeypatch.setenv("ADMIN_EMAILS", "Boss@Example.no, other@x.no")
+def token(monkeypatch):
+    monkeypatch.setenv("FIKEN_MCP_STATS_TOKEN", TOKEN)
 
 
-def test_admin_emails_normalised():
-    assert admin.is_admin("boss@example.no") and admin.is_admin(" BOSS@example.no ")
-    assert not admin.is_admin("nobody@x.no")
+def test_stats_token():
+    assert admin.stats_token_ok(f"Bearer {TOKEN}")
+    for bad in [None, "", TOKEN, f"Bearer {TOKEN}x", "Bearer ", f"Basic {TOKEN}"]:
+        assert not admin.stats_token_ok(bad)
 
 
-def test_no_admins_when_unset(monkeypatch):
-    monkeypatch.delenv("ADMIN_EMAILS")
-    assert not admin.is_admin("boss@example.no")
-
-
-def test_session_roundtrip_expiry_and_tamper():
-    cookie = admin.make_session("boss@example.no", now=1000)
-    assert admin.read_session(cookie, now=1000) == "boss@example.no"
-    assert admin.read_session(cookie, now=1000 + admin.SESSION_TTL_SECONDS + 1) is None
-    email, exp, sig = cookie.rsplit("|", 2)
-    assert admin.read_session(f"other@x.no|{exp}|{sig}", now=1000) is None
-    for bad in [None, "", "x", "a|b", "a|b|c|d"]:
-        assert admin.read_session(bad, now=0) is None
-
-
-def test_session_revoked_when_removed_from_admins(monkeypatch):
-    cookie = admin.make_session("boss@example.no", now=1000)
-    monkeypatch.setenv("ADMIN_EMAILS", "other@x.no")
-    assert admin.read_session(cookie, now=1000) is None
-
-
-def test_admin_state_prefix():
-    url, binding, nonce = __import__("app.account", fromlist=["x"]).start_login(admin.ADMIN_PREFIX)
-    assert admin.is_admin_state(nonce) and not nonce.startswith("web_")
+@pytest.mark.parametrize("value", ["", "short-token"])
+def test_disabled_without_strong_token(monkeypatch, value):
+    monkeypatch.setenv("FIKEN_MCP_STATS_TOKEN", value)
+    assert not admin.stats_token_ok(f"Bearer {value}")
 
 
 async def test_usage_middleware_counts_success_and_failure(monkeypatch):

@@ -32,12 +32,9 @@ def _sign(purpose: str, value: str) -> str:
 # -- innlogging -----------------------------------------------------------------
 
 
-def start_login(prefix: str = WEB_PREFIX) -> tuple[str, str, str]:
-    """Returnerer (Fiken-URL, login-cookie-verdi, nonce) for innlogging til en nettside.
-
-    `prefix` skiller kontosiden (web_) fra adminsiden (adm_) i callbacken.
-    """
-    nonce = prefix + secrets.token_urlsafe(24)
+def start_login() -> tuple[str, str, str]:
+    """Returnerer (Fiken-URL, login-cookie-verdi, nonce) for innlogging til kontosiden."""
+    nonce = WEB_PREFIX + secrets.token_urlsafe(24)
     state = fiken_oauth.make_state(nonce, config.fiken_client_secret())
     url = fiken_oauth.build_authorize_url(state, config.fiken_client_id(), config.fiken_redirect_uri())
     return url, login_binding(nonce), nonce
@@ -150,27 +147,20 @@ async def disconnect_all(user_id: str) -> None:
         )
 
 
-async def fiken_login(
+async def complete_web_login(
     code: str | None, request_id: str, error: str | None, login_cookie: str | None
-) -> tuple[dict, dict]:
-    """Felles for nettside-innlogging: sjekk nettleserbinding, veksle kode, hent Fiken-bruker."""
+) -> tuple[str | None, str]:
+    """Fullfør innlogging til kontosiden. Returnerer (user_id eller None, e-post)."""
     from app.mcp_auth import LoginError, fetch_fiken_user
 
     if not login_cookie or not hmac.compare_digest(login_cookie, login_binding(request_id)):
-        raise LoginError("Innloggingen ble ikke startet i denne nettleseren. Prøv igjen.")
+        raise LoginError("Innloggingen ble ikke startet i denne nettleseren. Prøv igjen fra /konto.")
     if error or not code:
         raise LoginError("Fiken-innloggingen ble avbrutt.")
     try:
         tokens = await fiken_oauth.exchange_code(code, fiken_oauth.make_state(request_id, config.fiken_client_secret()))
     except fiken_oauth.FikenOAuthError as exc:
         raise LoginError("Fiken avviste innloggingskoden. Prøv igjen.") from exc
-    return tokens, await fetch_fiken_user(tokens["access_token"])
-
-
-async def complete_web_login(
-    code: str | None, request_id: str, error: str | None, login_cookie: str | None
-) -> tuple[str | None, str]:
-    """Fullfør innlogging til kontosiden. Returnerer (user_id eller None, e-post)."""
-    tokens, fiken_user = await fiken_login(code, request_id, error, login_cookie)
+    fiken_user = await fetch_fiken_user(tokens["access_token"])
     email = (fiken_user.get("email") or "").strip().lower()
     return await user_id_for_login(tokens, fiken_user), email
