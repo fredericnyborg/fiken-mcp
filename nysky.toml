@@ -1,0 +1,39 @@
+schema_version = "0.1"
+name = "fiken-mcp"
+runtime = "container"
+
+# Idempotent skjema før trafikk. Bruker eier-rollen hvis den finnes.
+release_command = "sh -c 'psql \"${HOVED_MIGRATE_URL:-$HOVED_DATABASE_URL}\" -v ON_ERROR_STOP=1 -f migrations.sql'"
+
+# Utgående HTTPS (default-deny): Fiken OAuth + API.
+egress = [
+  "fiken.no",       # /oauth/token
+  "api.fiken.no",   # API v2
+]
+
+# Settes med `node nysky.mjs secret put <NAVN>` – aldri i git.
+secrets = [
+  "FIKEN_CLIENT_ID",
+  "FIKEN_CLIENT_SECRET",
+  "TOKEN_ENCRYPTION_KEY",   # 32 byte base64 (AES-256-GCM for Fiken-tokens)
+]
+
+# Eget subdomene. DNS hos Domeneshop: CNAME fiken-mcp → inn.nysky.no.
+# MÅ stå ETTER alle topp-nivå-felter (release_command/egress/secrets), ellers
+# suges de inn i routes-tabellen (TOML array-of-tables-scoping).
+[[routes]]
+hostname = "fiken-mcp.autoajour.no"
+
+[container]
+git = "nyborgfrederic/fiken-mcp"   # nysky-speilet av GitHub fredericnyborg/fiken-mcp
+port = 8000
+health_path = "/health"
+
+[http]
+response_timeout_s = 120           # Fiken-kall serialiseres per bruker og kan ta tid
+
+[logs]
+recipient = "age1qz26h9pptv88cdcmgan7efuzld040v749my90xygatyugvn039rq6nq8uu"
+
+[[datastores]]
+name = "hoved"                     # → HOVED_DATABASE_URL (Postgres 16)
