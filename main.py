@@ -14,6 +14,7 @@ import secrets
 import uuid
 from pathlib import Path
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 from fastmcp import FastMCP
 from starlette.requests import Request
@@ -26,7 +27,7 @@ from starlette.responses import (
     Response,
 )
 
-from app import account, config, fiken_oauth, tools
+from app import account, config, fiken_oauth, pages, tools
 from app.mcp_auth import (
     CSRF_COOKIE,
     LOGIN_COOKIE,
@@ -66,14 +67,8 @@ SECURITY_HEADERS = {
 
 
 def _page(title: str, message: str, status: int, extra_html: str = "") -> HTMLResponse:
-    body = (
-        "<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'>"
-        f"<title>{html.escape(title)}</title>"
-        "<link rel=icon href='/favicon.ico' sizes=any><link rel=icon type=image/png href='/icon.png'>"
-        "<body style='font-family:system-ui;max-width:32rem;margin:4rem auto;padding:0 1rem;line-height:1.5'>"
-        f"<h1>{html.escape(title)}</h1><p>{html.escape(message)}</p>{extra_html}</body>"
-    )
-    return HTMLResponse(body, status_code=status, headers=SECURITY_HEADERS)
+    body = (f"<p class='muted center'>{html.escape(message)}</p>" if message else "") + extra_html
+    return HTMLResponse(pages.render(title, body), status_code=status, headers=SECURITY_HEADERS)
 
 
 def _same_origin(request: Request) -> bool:
@@ -94,15 +89,26 @@ async def consent_page(request: Request) -> Response:
         return _page("Tilkobling feilet", str(exc), 400)
     csrf = secrets.token_urlsafe(24)
     action = html.escape(f"/consent/{request_id}")
+    client = html.escape(info["client_name"])
     form = (
-        f"<p><b>{html.escape(info['client_name'])}</b> ber om full lese- og skrivetilgang til "
-        "Fiken-regnskapet ditt (alle selskaper du har tilgang til). Etter godkjenning sendes du "
-        f"tilbake til <b>{html.escape(info['redirect_host'])}</b>.</p>"
-        "<p>Godkjenn bare hvis du selv startet denne tilkoblingen.</p>"
+        f"<p class='muted center'><b>{client}</b> ber om tilgang til Fiken-regnskapet ditt.</p>"
+        "<ul>"
+        "<li>Lese regnskapsdata: kontoer, bilag, fakturaer, kontakter m.m.</li>"
+        "<li>Føre og endre i regnskapet på dine vegne, f.eks. bilag og fakturaer</li>"
+        "<li>Gjelder alle Fiken-selskaper du har tilgang til</li>"
+        "</ul>"
+        "<div class=info>"
+        f"<div>Neste steg: <b>logg inn hos Fiken</b></div>"
+        f"<div>Sendes deretter tilbake til: <b>{html.escape(info['redirect_host'])}</b></div>"
+        "<div style='margin-top:.4rem'>Godkjenn bare hvis du selv startet denne tilkoblingen. "
+        "Du kan trekke tilgangen tilbake når som helst under Mine tilkoblinger.</div>"
+        "</div>"
         f"<form method=post action='{action}'>"
         f"<input type=hidden name=csrf value='{html.escape(csrf)}'>"
-        "<button name=action value=approve style='padding:.6rem 1.2rem;margin-right:.5rem'>Godkjenn og logg inn med Fiken</button>"
-        "<button name=action value=deny style='padding:.6rem 1.2rem'>Avbryt</button></form>"
+        "<div class=row>"
+        "<button class='btn btn-outline' name=action value=deny>Avbryt</button>"
+        "<button class='btn btn-primary' name=action value=approve>Logg inn med Fiken</button>"
+        "</div></form>"
     )
     resp = _page("Koble til Fiken", "", 200, form)
     resp.set_cookie(
@@ -190,11 +196,11 @@ async def _web_login_callback(request: Request, request_id: str) -> Response:
 # -- kontoside ------------------------------------------------------------------
 
 
-BUTTON = "padding:.5rem 1rem;cursor:pointer"
+OSLO = ZoneInfo("Europe/Oslo")
 
 
 def _fmt(dt) -> str:
-    return dt.astimezone().strftime("%d.%m.%Y %H:%M") if dt else "aldri"
+    return dt.astimezone(OSLO).strftime("%d.%m.%Y %H:%M") if dt else "aldri"
 
 
 def _session(request: Request) -> tuple[str | None, str]:
@@ -224,8 +230,7 @@ async def account_page(request: Request) -> Response:
             "Logg inn med Fiken for å se hvilke AI-klienter som har tilgang til regnskapet ditt, "
             "og trekke tilgangen tilbake.",
             200,
-            f"<p><a href='/konto/login' style='{BUTTON};display:inline-block;border:1px solid;"
-            "text-decoration:none'>Logg inn med Fiken</a></p>",
+            "<div class=row><a class='btn btn-primary' href='/konto/login'>Logg inn med Fiken</a></div>",
         )
     data = await account.overview(user_id)
     if data["user"] is None:
@@ -235,24 +240,24 @@ async def account_page(request: Request) -> Response:
     csrf = html.escape(account.csrf_token(cookie))
     hidden = f"<input type=hidden name=csrf value='{csrf}'>"
     rows = "".join(
-        "<li style='margin:.75rem 0'>"
-        f"<b>{html.escape(g['client_name'] or 'Ukjent klient')}</b>"
-        f" <span style='color:#666'>({html.escape(urlparse(g['redirect_uri'] or '').netloc)})</span><br>"
-        f"Koblet til {_fmt(g['created_at'])} · sist brukt {_fmt(g['last_used_at'])}"
-        f"<form method=post action='/konto/revoke/{html.escape(str(g['id']))}' style='margin-top:.25rem'>"
-        f"{hidden}<button style='{BUTTON}'>Trekk tilbake</button></form></li>"
+        "<div class=grant><div>"
+        f"<div><b>{html.escape(g['client_name'] or 'Ukjent klient')}</b></div>"
+        f"<div class=muted>{html.escape(urlparse(g['redirect_uri'] or '').netloc)}</div>"
+        f"<div class=muted>Koblet til {_fmt(g['created_at'])} · sist brukt {_fmt(g['last_used_at'])}</div>"
+        f"</div><form method=post action='/konto/revoke/{html.escape(str(g['id']))}'>"
+        f"{hidden}<button class='btn btn-outline btn-sm'>Trekk tilbake</button></form></div>"
         for g in data["grants"]
-    ) or "<li>Ingen aktive tilkoblinger.</li>"
+    ) or "<p class='muted center'>Ingen aktive tilkoblinger.</p>"
     user = data["user"]
     extra = (
-        f"<ul style='padding-left:1.2rem'>{rows}</ul>"
+        f"{rows}"
         "<h2>Koble fra alt</h2>"
-        "<p>Trekker alle tilkoblinger og sletter Fiken-tilgangen vi har lagret. Du kan også fjerne "
-        "appen i Fiken under Brukerinnstillinger → API.</p>"
-        f"<form method=post action='/konto/disconnect'>{hidden}"
-        f"<button style='{BUTTON}'>Koble fra alt og slett data</button></form>"
-        f"<form method=post action='/konto/logout' style='margin-top:2rem'>{hidden}"
-        f"<button style='{BUTTON}'>Logg ut</button></form>"
+        "<p class=muted>Trekker alle tilkoblinger og sletter Fiken-tilgangen vi har lagret. Du kan også "
+        "fjerne appen i Fiken under Brukerinnstillinger → API.</p>"
+        f"<form method=post action='/konto/disconnect'>{hidden}<div class=row>"
+        "<button class='btn btn-danger'>Koble fra alt og slett data</button></div></form>"
+        f"<form method=post action='/konto/logout'>{hidden}<div class=row>"
+        "<button class='btn btn-outline'>Logg ut</button></div></form>"
     )
     who = f"Innlogget som {user['name'] or ''} ({user['email']})."
     if not user["connected"]:
@@ -314,6 +319,11 @@ async def favicon(_: Request) -> Response:
     return FileResponse(STATIC_DIR / "favicon.ico", media_type="image/x-icon")
 
 
+@mcp.custom_route("/logo.png", methods=["GET"])
+async def logo(_: Request) -> Response:
+    return FileResponse(STATIC_DIR / "logo.png", media_type="image/png")
+
+
 @mcp.custom_route("/icon.png", methods=["GET"])
 async def icon(_: Request) -> Response:
     return FileResponse(STATIC_DIR / "icon.png", media_type="image/png")
@@ -326,7 +336,7 @@ async def index(_: Request) -> Response:
         "MCP-server for Fiken. Legg til https://fiken-mcp.autoajour.no/mcp som connector i "
         "Claude (eller en annen MCP-klient) og logg inn med Fiken. Ingen egen konto trengs.",
         200,
-        "<p><a href='/konto'>Se og trekk tilbake tilkoblingene dine</a></p>",
+        "<div class=row><a class='btn btn-outline' href='/konto'>Mine tilkoblinger</a></div>",
     )
 
 
