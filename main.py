@@ -12,11 +12,19 @@ import html
 import logging
 import secrets
 import uuid
+from pathlib import Path
 from urllib.parse import urlparse
 
 from fastmcp import FastMCP
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from mcp.types import Icon
+from starlette.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+)
 
 from app import account, config, fiken_oauth, tools
 from app.mcp_auth import (
@@ -43,13 +51,15 @@ mcp = FastMCP(
         "Skriveverktøy endrer regnskapet direkte – bekreft med brukeren før bokføring."
     ),
     auth=FikenMCPOAuthProvider(),
+    # Ikonet Claude o.l. viser for connectoren.
+    icons=[Icon(src=f"{config.public_url()}/icon.png", mimeType="image/png", sizes=["512x512"])],
 )
 tools.register(mcp)
 
 
 SECURITY_HEADERS = {
     "X-Frame-Options": "DENY",
-    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'",
+    "Content-Security-Policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'none'",
     "Referrer-Policy": "no-referrer",
     "Cache-Control": "no-store",
 }
@@ -59,6 +69,7 @@ def _page(title: str, message: str, status: int, extra_html: str = "") -> HTMLRe
     body = (
         "<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'>"
         f"<title>{html.escape(title)}</title>"
+        "<link rel=icon href='/favicon.ico' sizes=any><link rel=icon type=image/png href='/icon.png'>"
         "<body style='font-family:system-ui;max-width:32rem;margin:4rem auto;padding:0 1rem;line-height:1.5'>"
         f"<h1>{html.escape(title)}</h1><p>{html.escape(message)}</p>{extra_html}</body>"
     )
@@ -293,6 +304,19 @@ async def account_logout(request: Request) -> Response:
 @mcp.custom_route("/health", methods=["GET"])
 async def health(_: Request) -> Response:
     return JSONResponse({"status": "ok"})
+
+
+STATIC_DIR = Path(__file__).parent / "app" / "static"
+
+
+@mcp.custom_route("/favicon.ico", methods=["GET"])
+async def favicon(_: Request) -> Response:
+    return FileResponse(STATIC_DIR / "favicon.ico", media_type="image/x-icon")
+
+
+@mcp.custom_route("/icon.png", methods=["GET"])
+async def icon(_: Request) -> Response:
+    return FileResponse(STATIC_DIR / "icon.png", media_type="image/png")
 
 
 @mcp.custom_route("/", methods=["GET"])
