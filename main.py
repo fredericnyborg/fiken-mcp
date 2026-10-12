@@ -1,8 +1,8 @@
 """fiken-mcp: rå MCP-server for Fiken API v2.
 
 Ruter: /mcp (MCP, streamable HTTP), OAuth (/register, /authorize, /token, /revoke,
-/.well-known/...), /consent/<id> (samtykkeside), /fiken/callback (Fiken OAuth-retur)
-og /health.
+/.well-known/...), /consent/<id> (samtykkeside), /fiken/callback (Fiken OAuth-retur),
+/konto (se og trekk tilbake tilkoblinger) og /health.
 """
 
 from __future__ import annotations
@@ -11,13 +11,14 @@ import hmac
 import html
 import logging
 import secrets
+import uuid
 from urllib.parse import urlparse
 
 from fastmcp import FastMCP
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from app import config, tools
+from app import account, config, fiken_oauth, tools
 from app.mcp_auth import (
     CSRF_COOKIE,
     LOGIN_COOKIE,
@@ -124,9 +125,15 @@ async def consent_submit(request: Request) -> Response:
     return resp
 
 
+WEB_LOGIN_COOKIE = "fiken_mcp_web_login"
+
+
 @mcp.custom_route("/fiken/callback", methods=["GET"])
 async def fiken_callback(request: Request) -> Response:
     q = request.query_params
+    request_id = fiken_oauth.verify_state(q.get("state") or "", config.fiken_client_secret())
+    if request_id is not None and account.is_web_state(request_id):
+        return await _web_login_callback(request, request_id)
     try:
         target = await complete_fiken_login(
             q.get("code"), q.get("state"), q.get("error"), request.cookies.get(LOGIN_COOKIE)
@@ -141,6 +148,148 @@ async def fiken_callback(request: Request) -> Response:
     return resp
 
 
+async def _web_login_callback(request: Request, request_id: str) -> Response:
+    q = request.query_params
+    try:
+        user_id, email = await account.complete_web_login(
+            q.get("code"), request_id, q.get("error"), request.cookies.get(WEB_LOGIN_COOKIE)
+        )
+    except LoginError as exc:
+        return _page("Innlogging feilet", str(exc), 400)
+    except Exception:
+        log.exception("Innlogging til kontosiden feilet")
+        return _page("Innlogging feilet", "Uventet feil. Prøv igjen senere.", 500)
+    if user_id is None:
+        resp = _page(
+            "Ingen tilkoblinger",
+            f"Fiken-brukeren {email} har ingen tilkoblinger til Fiken MCP, og vi lagrer ingen data om den.",
+            200,
+        )
+    else:
+        resp = RedirectResponse("/konto", status_code=303)
+        resp.set_cookie(
+            account.SESSION_COOKIE, account.make_session(user_id),
+            max_age=account.SESSION_TTL_SECONDS, path="/konto",
+            secure=True, httponly=True, samesite="lax",
+        )
+    resp.delete_cookie(WEB_LOGIN_COOKIE, path="/fiken/callback")
+    return resp
+
+
+# -- kontoside ------------------------------------------------------------------
+
+
+BUTTON = "padding:.5rem 1rem;cursor:pointer"
+
+
+def _fmt(dt) -> str:
+    return dt.astimezone().strftime("%d.%m.%Y %H:%M") if dt else "aldri"
+
+
+def _session(request: Request) -> tuple[str | None, str]:
+    cookie = request.cookies.get(account.SESSION_COOKIE) or ""
+    return account.read_session(cookie), cookie
+
+
+async def _check_post(request: Request) -> tuple[str | None, Response | None]:
+    """Felles sjekk for POST på /konto: gyldig sesjon, same-origin og CSRF."""
+    user_id, cookie = _session(request)
+    if user_id is None:
+        return None, RedirectResponse("/konto", status_code=303)
+    form = await request.form()
+    if not _same_origin(request) or not hmac.compare_digest(
+        str(form.get("csrf") or ""), account.csrf_token(cookie)
+    ):
+        return None, _page("Ugyldig forespørsel", "Last siden på nytt og prøv igjen.", 403)
+    return user_id, None
+
+
+@mcp.custom_route("/konto", methods=["GET"])
+async def account_page(request: Request) -> Response:
+    user_id, cookie = _session(request)
+    if user_id is None:
+        return _page(
+            "Mine Fiken-tilkoblinger",
+            "Logg inn med Fiken for å se hvilke AI-klienter som har tilgang til regnskapet ditt, "
+            "og trekke tilgangen tilbake.",
+            200,
+            f"<p><a href='/konto/login' style='{BUTTON};display:inline-block;border:1px solid;"
+            "text-decoration:none'>Logg inn med Fiken</a></p>",
+        )
+    data = await account.overview(user_id)
+    if data["user"] is None:
+        resp = RedirectResponse("/konto", status_code=303)
+        resp.delete_cookie(account.SESSION_COOKIE, path="/konto")
+        return resp
+    csrf = html.escape(account.csrf_token(cookie))
+    hidden = f"<input type=hidden name=csrf value='{csrf}'>"
+    rows = "".join(
+        "<li style='margin:.75rem 0'>"
+        f"<b>{html.escape(g['client_name'] or 'Ukjent klient')}</b>"
+        f" <span style='color:#666'>({html.escape(urlparse(g['redirect_uri'] or '').netloc)})</span><br>"
+        f"Koblet til {_fmt(g['created_at'])} · sist brukt {_fmt(g['last_used_at'])}"
+        f"<form method=post action='/konto/revoke/{html.escape(str(g['id']))}' style='margin-top:.25rem'>"
+        f"{hidden}<button style='{BUTTON}'>Trekk tilbake</button></form></li>"
+        for g in data["grants"]
+    ) or "<li>Ingen aktive tilkoblinger.</li>"
+    user = data["user"]
+    extra = (
+        f"<ul style='padding-left:1.2rem'>{rows}</ul>"
+        "<h2>Koble fra alt</h2>"
+        "<p>Trekker alle tilkoblinger og sletter Fiken-tilgangen vi har lagret. Du kan også fjerne "
+        "appen i Fiken under Brukerinnstillinger → API.</p>"
+        f"<form method=post action='/konto/disconnect'>{hidden}"
+        f"<button style='{BUTTON}'>Koble fra alt og slett data</button></form>"
+        f"<form method=post action='/konto/logout' style='margin-top:2rem'>{hidden}"
+        f"<button style='{BUTTON}'>Logg ut</button></form>"
+    )
+    who = f"Innlogget som {user['name'] or ''} ({user['email']})."
+    if not user["connected"]:
+        who += " Ingen lagret Fiken-tilgang."
+    return _page("Mine Fiken-tilkoblinger", who, 200, extra)
+
+
+@mcp.custom_route("/konto/login", methods=["GET"])
+async def account_login(_: Request) -> Response:
+    url, binding, _nonce = account.start_login()
+    resp = RedirectResponse(url, status_code=303)
+    resp.set_cookie(
+        WEB_LOGIN_COOKIE, binding, max_age=REQUEST_TTL_SECONDS, path="/fiken/callback",
+        secure=True, httponly=True, samesite="lax",
+    )
+    return resp
+
+
+@mcp.custom_route("/konto/revoke/{grant_id}", methods=["POST"])
+async def account_revoke(request: Request) -> Response:
+    user_id, error = await _check_post(request)
+    if error is not None:
+        return error
+    try:
+        grant_id = str(uuid.UUID(request.path_params["grant_id"]))
+    except ValueError:
+        return RedirectResponse("/konto", status_code=303)
+    await account.revoke_grant(user_id, grant_id)
+    return RedirectResponse("/konto", status_code=303)
+
+
+@mcp.custom_route("/konto/disconnect", methods=["POST"])
+async def account_disconnect(request: Request) -> Response:
+    user_id, error = await _check_post(request)
+    if error is not None:
+        return error
+    await account.disconnect_all(user_id)
+    return RedirectResponse("/konto", status_code=303)
+
+
+@mcp.custom_route("/konto/logout", methods=["POST"])
+async def account_logout(request: Request) -> Response:
+    _user_id, error = await _check_post(request)
+    resp = error or RedirectResponse("/konto", status_code=303)
+    resp.delete_cookie(account.SESSION_COOKIE, path="/konto")
+    return resp
+
+
 @mcp.custom_route("/health", methods=["GET"])
 async def health(_: Request) -> Response:
     return JSONResponse({"status": "ok"})
@@ -151,8 +300,9 @@ async def index(_: Request) -> Response:
     return _page(
         "Fiken MCP",
         "MCP-server for Fiken. Legg til https://fiken-mcp.autoajour.no/mcp som connector i "
-        "Claude (eller en annen MCP-klient) og logg inn med Fiken.",
+        "Claude (eller en annen MCP-klient) og logg inn med Fiken. Ingen egen konto trengs.",
         200,
+        "<p><a href='/konto'>Se og trekk tilbake tilkoblingene dine</a></p>",
     )
 
 
