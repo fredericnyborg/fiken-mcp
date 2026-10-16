@@ -18,6 +18,8 @@ from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 from fastmcp import FastMCP
+from starlette.datastructures import Headers
+from starlette.middleware import Middleware as StarletteMiddleware
 from starlette.requests import Request
 from mcp.types import Icon
 from starlette.responses import (
@@ -447,4 +449,46 @@ async def sitemap(_: Request) -> Response:
     return Response(body, media_type="application/xml")
 
 
-app = mcp.http_app(path="/mcp", stateless_http=True)
+def _mcp_browser_page() -> str:
+    url = html.escape(config.public_url() + "/mcp")
+    return f"""
+<p class='muted center'>Denne adressen er laget for Claude og andre AI-assistenter,
+ikke for nettleseren.</p>
+<div class=info style='text-align:center;font-size:1rem'><b style='user-select:all'>{url}</b></div>
+<h2>Slik kobler du til</h2>
+<ol>
+<li>Kopier adressen over.</li>
+<li>Åpne Claude → <b>Innstillinger → Connectors → Legg til egendefinert</b>.</li>
+<li>Lim inn adressen, logg inn med Fiken og godkjenn.</li>
+</ol>
+<div class=row><a class='btn btn-primary' href='/'>Les mer om Fiken MCP</a>
+<a class='btn btn-outline' href='/konto'>Mine tilkoblinger</a></div>
+"""
+
+
+class BrowserLandingMiddleware:
+    """Vis en forklarende side når /mcp åpnes i en nettleser.
+
+    MCP-klienter sender POST, eller GET med Accept: text/event-stream; en nettleser
+    sender GET med Accept: text/html. Bare det siste tilfellet fanges her.
+    """
+
+    def __init__(self, app) -> None:  # noqa: ANN001
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:  # noqa: ANN001
+        if scope["type"] == "http" and scope["method"] == "GET" and scope["path"].rstrip("/") == "/mcp":
+            accept = Headers(scope=scope).get("accept", "")
+            if "text/html" in accept and "text/event-stream" not in accept:
+                resp = HTMLResponse(
+                    pages.render("Koble Claude til Fiken", _mcp_browser_page()),
+                    headers=SECURITY_HEADERS,
+                )
+                await resp(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
+
+
+app = mcp.http_app(
+    path="/mcp", stateless_http=True, middleware=[StarletteMiddleware(BrowserLandingMiddleware)]
+)
