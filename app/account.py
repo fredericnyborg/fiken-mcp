@@ -130,21 +130,12 @@ async def revoke_grant(user_id: str, grant_id: str) -> bool:
 
 
 async def disconnect_all(user_id: str) -> None:
-    """Trekk alle tilkoblinger og slett lagrede Fiken-tokens."""
+    """Slett brukeren helt: Fiken-tokens, e-post/navn, alle tilkoblinger og MCP-tokens.
+
+    mcp_grants → mcp_codes/mcp_tokens slettes via ON DELETE CASCADE.
+    """
     pool = await db.pool()
-    async with pool.acquire() as conn, conn.transaction():
-        await conn.execute(
-            "DELETE FROM mcp_tokens WHERE grant_id IN (SELECT id FROM mcp_grants WHERE user_id = $1)",
-            user_id,
-        )
-        await conn.execute(
-            "UPDATE mcp_grants SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL",
-            user_id,
-        )
-        await conn.execute(
-            "UPDATE fiken_users SET token_iv = NULL, token_ct = NULL, updated_at = now() WHERE id = $1",
-            user_id,
-        )
+    await pool.execute("DELETE FROM fiken_users WHERE id = $1", user_id)
 
 
 async def complete_web_login(

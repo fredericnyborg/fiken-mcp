@@ -76,6 +76,7 @@ def render(
         f"{LOGO_SVG}"
         f"<h1>{html.escape(title)}</h1>{body_html}</div>"
         "<p class=foot>Fiken MCP fra <a href='https://autoajour.no'>Autoajour</a> · "
-        "<a href='/konto'>Mine tilkoblinger</a></p>"
+        "<a href='/konto'>Mine tilkoblinger</a> · <a href='/hjelp'>Hjelp</a> · "
+        "<a href='/personvern'>Personvern</a></p>"
         "</main></body></html>"
     )

@@ -14,7 +14,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-Kind = Literal["read", "write", "destructive"]
+# external = sender noe ut av Fiken (e-post/EHF/SMS/brev) til en tredjepart; kan ikke angres.
+Kind = Literal["read", "write", "destructive", "external"]
 
 
 @dataclass(frozen=True)
@@ -78,7 +79,7 @@ ENDPOINTS: tuple[Endpoint, ...] = (
     E('get_credit_note', 'GET', '/creditNotes/{creditNoteId}', 'read', 'Returns a specific credit note by ID'),
     E('create_full_credit_note', 'POST', '/creditNotes/full', 'write', 'Creates a credit note covering the full amount of an invoice', body=True),
     E('create_partial_credit_note', 'POST', '/creditNotes/partial', 'write', 'Creates a credit note for a partial amount of an invoice. Lines must total less than the original invoice.', body=True),
-    E('send_credit_note', 'POST', '/creditNotes/send', 'write', 'Sends a credit note via email and/or EHF', body=True),
+    E('send_credit_note', 'POST', '/creditNotes/send', 'external', 'Sends a credit note via email and/or EHF', body=True),
     E('get_credit_note_counter', 'GET', '/creditNotes/counter', 'read', 'Retrieves the current credit note number counter'),
     E('create_credit_note_counter', 'POST', '/creditNotes/counter', 'write', 'Creates the first credit note number counter', body=True),
     E('list_credit_note_drafts', 'GET', '/creditNotes/drafts', 'read', 'Returns all credit note drafts for the company', paged=True),
@@ -91,7 +92,7 @@ ENDPOINTS: tuple[Endpoint, ...] = (
     E('create_invoice', 'POST', '/invoices', 'write', "Creates a new invoice. Amounts are in NOK øre (cents). Each line's incomeAccount must exist in the chart of accounts and match its vatType (e.g. 3000 accepts only HIGH, 3100 only EXEMPT, 3200 only OUTSIDE).", body=True),
     E('get_invoice', 'GET', '/invoices/{invoiceId}', 'read', 'Returns a specific invoice by ID'),
     E('update_invoice', 'PATCH', '/invoices/{invoiceId}', 'write', 'Updates an invoice (due date and/or manual send status)', body=True),
-    E('send_invoice', 'POST', '/invoices/send', 'write', 'Sends an invoice via email and/or EHF', body=True),
+    E('send_invoice', 'POST', '/invoices/send', 'external', 'Sends an invoice via email and/or EHF', body=True),
     E('get_invoice_counter', 'GET', '/invoices/counter', 'read', 'Retrieves the current invoice number counter'),
     E('create_invoice_counter', 'POST', '/invoices/counter', 'write', 'Creates the first invoice number counter', body=True),
     E('list_invoice_drafts', 'GET', '/invoices/drafts', 'read', 'Returns all invoice drafts for the company', paged=True, filters=('orderReference', 'uuid')),
@@ -120,7 +121,7 @@ ENDPOINTS: tuple[Endpoint, ...] = (
     E('update_offer_draft', 'PUT', '/offers/drafts/{draftId}', 'destructive', 'Updates an offer draft. Replaces the whole record: send every field you want to keep.', body=True),
     E('delete_offer_draft', 'DELETE', '/offers/drafts/{draftId}', 'destructive', 'Deletes an offer draft'),
     E('create_offer_from_draft', 'POST', '/offers/drafts/{draftId}/createOffer', 'write', 'Creates a finalized offer from a draft'),
-    E('send_offer', 'POST', '/offers/send', 'write', 'Sends an offer by email, EHF, eFaktura, SMS or letter', body=True),
+    E('send_offer', 'POST', '/offers/send', 'external', 'Sends an offer by email, EHF, eFaktura, SMS or letter', body=True),
     E('list_order_confirmations', 'GET', '/orderConfirmations', 'read', 'Returns all order confirmations for the company', paged=True),
     E('get_order_confirmation', 'GET', '/orderConfirmations/{confirmationId}', 'read', 'Returns a specific order confirmation by ID'),
     E('get_order_confirmation_counter', 'GET', '/orderConfirmations/counter', 'read', 'Retrieves the order confirmation number counter'),
@@ -148,7 +149,7 @@ ENDPOINTS: tuple[Endpoint, ...] = (
     E('delete_purchase_draft', 'DELETE', '/purchases/drafts/{draftId}', 'destructive', 'Deletes a purchase draft'),
     E('create_purchase_from_draft', 'POST', '/purchases/drafts/{draftId}/createPurchase', 'write', 'Creates a finalized purchase from a draft'),
     E('get_purchase_payments', 'GET', '/purchases/{purchaseId}/payments', 'read', 'Returns all payments for a purchase'),
-    E('create_purchase_payment', 'POST', '/purchases/{purchaseId}/payments', 'write', 'Creates a new payment for a purchase. Amounts in cents', body=True),
+    E('create_purchase_payment', 'POST', '/purchases/{purchaseId}/payments', 'write', 'Registers a payment on a purchase in the books (bookkeeping only: does not transfer money). Amounts in øre', body=True),
     E('get_purchase_payment', 'GET', '/purchases/{purchaseId}/payments/{paymentId}', 'read', 'Returns a specific payment on a purchase'),
     E('delete_purchase_payment', 'DELETE', '/purchases/{purchaseId}/payments/{paymentId}', 'destructive', 'Undoes a payment on a purchase ("Angre"). An open payment is deleted; a closed one gets a reverse transaction', optional_query=('description',)),
     E('get_purchase_accruals', 'GET', '/purchases/{purchaseId}/accruals', 'read', 'Returns all accruals (periodisering) set up on a purchase'),
@@ -176,7 +177,7 @@ ENDPOINTS: tuple[Endpoint, ...] = (
     E('settle_sale', 'PATCH', '/sales/{saleId}/settled', 'destructive', 'Marks a sale as settled without payment ("sett til oppgjort uten betaling"). Send a new settledDate to change the settlement date', required_query=('settledDate',)),
     E('write_off_sale', 'PATCH', '/sales/{saleId}/writeOff', 'destructive', 'Registers a write-off (tapsføring) for a sale. The sale must not be a cash sale, already written off, settled or deleted, and must have an outstanding balance. The write-off date must be after the sale date', body=True),
     E('get_sale_payments', 'GET', '/sales/{saleId}/payments', 'read', 'Returns all payments for a sale'),
-    E('create_sale_payment', 'POST', '/sales/{saleId}/payments', 'write', 'Creates a new payment for a sale. Amounts in cents', body=True),
+    E('create_sale_payment', 'POST', '/sales/{saleId}/payments', 'write', 'Registers a received payment on a sale in the books (bookkeeping only: does not transfer money). Amounts in øre', body=True),
     E('get_sale_payment', 'GET', '/sales/{saleId}/payments/{paymentId}', 'read', 'Returns a specific payment on a sale'),
     E('delete_sale_payment', 'DELETE', '/sales/{saleId}/payments/{paymentId}', 'destructive', 'Undoes a payment on a sale ("Angre"). An open payment is deleted; a closed one gets a reverse transaction. Fails if already deleted, on a written-off sale, or related to debt collection', optional_query=('description',)),
     E('get_sale_accruals', 'GET', '/sales/{saleId}/accruals', 'read', 'Returns all accruals (periodisering) set up on a sale'),

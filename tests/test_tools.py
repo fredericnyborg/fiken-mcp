@@ -167,3 +167,34 @@ async def test_add_attachment_multipart(monkeypatch):
 
     with pytest.raises(ToolError, match="nøyaktig én"):
         await add.run({"resource": "sale", "id": 5, "companySlug": "co"})
+
+
+async def test_every_tool_meets_claude_directory_rules():
+    """Claude-katalogen: tittel + riktig hint på alle verktøy, navn ≤ 64 tegn."""
+    from fastmcp import FastMCP
+
+    mcp = FastMCP("t")
+    tools.register(mcp)
+    listed = await mcp.list_tools()
+    assert len(listed) == len(ENDPOINTS) + 5
+    for t in listed:
+        a = t.annotations
+        assert len(t.name) <= 64, t.name
+        assert a is not None and a.title, t.name
+        assert a.read_only_hint is not None, t.name
+        if not a.read_only_hint:
+            assert a.destructive_hint is not None, t.name
+        ep = BY_NAME.get(t.name)
+        if ep is not None:
+            assert a.read_only_hint == (ep.method == "GET"), t.name
+            if ep.method in ("PUT", "DELETE"):
+                assert a.destructive_hint, t.name
+    by = {t.name: t.annotations for t in listed}
+    for name in ("send_invoice", "send_offer", "send_credit_note"):
+        assert by[name].destructive_hint and by[name].open_world_hint
+    assert by["list_ehf_documents"].title == "List EHF documents"
+
+
+def test_payment_tools_say_no_money_moves():
+    for name in ("create_sale_payment", "create_purchase_payment"):
+        assert "does not transfer money" in BY_NAME[name].description

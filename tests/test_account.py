@@ -39,3 +39,21 @@ async def test_web_login_requires_same_browser():
         await account.complete_web_login("code", "web_x", None, "wrong")
     with pytest.raises(LoginError, match="avbrutt"):
         await account.complete_web_login(None, "web_x", "access_denied", account.login_binding("web_x"))
+
+
+async def test_disconnect_all_deletes_user_row(monkeypatch):
+    """«Koble fra alt og slett data» skal slette brukerraden (cascade tar grants/tokens)."""
+    from app import account, db
+
+    calls = []
+
+    class Pool:
+        async def execute(self, sql, *args):
+            calls.append((sql, args))
+
+    async def pool():
+        return Pool()
+
+    monkeypatch.setattr(db, "pool", pool)
+    await account.disconnect_all("u1")
+    assert calls == [("DELETE FROM fiken_users WHERE id = $1", ("u1",))]

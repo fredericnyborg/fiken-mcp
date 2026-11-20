@@ -20,11 +20,27 @@ from mcp.types import TextContent, ToolAnnotations
 from app.endpoints import ENDPOINTS, STRING_PATH_PARAMS, Endpoint
 from app.fiken_client import FikenError, FikenSession, check_raw_path, segment
 
-ANNOTATIONS = {
-    "read": ToolAnnotations(readOnlyHint=True, openWorldHint=False),
-    "write": ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=False),
-    "destructive": ToolAnnotations(readOnlyHint=False, destructiveHint=True, openWorldHint=False),
+# Claude-katalogen krever tittel + riktig hint på hvert verktøy.
+ANNOTATION_HINTS = {
+    "read": {"readOnlyHint": True, "openWorldHint": False},
+    "write": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False},
+    "destructive": {"readOnlyHint": False, "destructiveHint": True, "openWorldHint": False},
+    # Sender dokumentet til mottakeren (e-post/EHF/SMS/brev): kan ikke angres, og når ut av Fiken.
+    "external": {"readOnlyHint": False, "destructiveHint": True, "openWorldHint": True},
 }
+
+ACRONYMS = {"ehf": "EHF", "id": "ID", "get": "Get"}
+
+
+def tool_title(name: str) -> str:
+    """Lesbar tittel fra verktøynavnet: list_ehf_documents → «List EHF documents»."""
+    words = [ACRONYMS.get(w, w) for w in name.split("_")]
+    words[0] = words[0][:1].upper() + words[0][1:]
+    return " ".join(words)
+
+
+def annotations(kind: str, name: str, title: str | None = None) -> ToolAnnotations:
+    return ToolAnnotations(title=title or tool_title(name), **ANNOTATION_HINTS[kind])
 
 ALLOWED_UPLOAD_EXTENSIONS = (".png", ".jpeg", ".jpg", ".gif", ".pdf")
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
@@ -47,7 +63,7 @@ def current_session() -> FikenSession:
 
 
 def result(data: Any) -> ToolResult:
-    return ToolResult(content=[TextContent(type="text", text=json.dumps(data, ensure_ascii=False, indent=2))])
+    return ToolResult(content=[TextContent(type="text", text=json.dumps(data, ensure_ascii=False, separators=(",", ":")))])
 
 
 def journal_balance_errors(body: Any) -> list[str]:
@@ -177,7 +193,8 @@ def endpoint_tool(ep: Endpoint) -> FikenEndpointTool:
         name=ep.name,
         description=describe(ep),
         parameters=input_schema(ep),
-        annotations=ANNOTATIONS[ep.kind],
+        title=tool_title(ep.name),
+        annotations=annotations(ep.kind, ep.name),
         endpoint=ep,
     )
 
@@ -223,7 +240,7 @@ def register(mcp: FastMCP) -> None:
     for ep in ENDPOINTS:
         mcp.add_tool(endpoint_tool(ep))
 
-    @mcp.tool(annotations=ANNOTATIONS["read"])
+    @mcp.tool(annotations=annotations("read", "fiken_get", 'Fiken API: raw GET'))
     async def fiken_get(path: str, query: dict[str, Any] | None = None) -> ToolResult:
         """Raw GET against any Fiken API v2 path (escape hatch for endpoints without a tool),
         e.g. /companies/{slug}/accounts. Path is relative to https://api.fiken.no/api/v2."""
@@ -233,7 +250,7 @@ def register(mcp: FastMCP) -> None:
         except FikenError as exc:
             raise ToolError(str(exc)) from exc
 
-    @mcp.tool(annotations=ANNOTATIONS["read"])
+    @mcp.tool(annotations=annotations("read", "list_attachments"))
     async def list_attachments(
         resource: AttachmentResource, id: int, companySlug: str | None = None
     ) -> ToolResult:
@@ -246,7 +263,7 @@ def register(mcp: FastMCP) -> None:
         except FikenError as exc:
             raise ToolError(str(exc)) from exc
 
-    @mcp.tool(annotations=ANNOTATIONS["write"])
+    @mcp.tool(annotations=annotations("write", "add_attachment"))
     async def add_attachment(
         resource: AttachmentResource,
         id: int,
@@ -288,7 +305,7 @@ def register(mcp: FastMCP) -> None:
         except FikenError as exc:
             raise ToolError(str(exc)) from exc
 
-    @mcp.tool(annotations=ANNOTATIONS["destructive"])
+    @mcp.tool(annotations=annotations("destructive", "delete_attachment"))
     async def delete_attachment(
         resource: AttachmentResource, id: int, attachmentUuid: str, companySlug: str | None = None
     ) -> ToolResult:
@@ -304,7 +321,7 @@ def register(mcp: FastMCP) -> None:
         except FikenError as exc:
             raise ToolError(str(exc)) from exc
 
-    @mcp.tool(annotations=ANNOTATIONS["write"])
+    @mcp.tool(annotations=annotations("write", "create_inbox_document", 'Upload document to Fiken inbox'))
     async def create_inbox_document(
         filename: str,
         fileBase64: str,
