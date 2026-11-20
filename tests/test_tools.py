@@ -198,3 +198,15 @@ async def test_every_tool_meets_claude_directory_rules():
 def test_payment_tools_say_no_money_moves():
     for name in ("create_sale_payment", "create_purchase_payment"):
         assert "does not transfer money" in BY_NAME[name].description
+
+
+def test_endpoints_synced_with_fiken_spec_2026_11():
+    """Endepunkter lagt til / rettet etter sammenligning med Fikens swagger.yaml (2026-11-20)."""
+    for name, kind in (("settle_purchase", "destructive"), ("pause_recurring_invoice_job", "write"),
+                       ("resume_recurring_invoice_job", "write"), ("stop_recurring_invoice_job", "destructive")):
+        assert BY_NAME[name].kind == kind
+    assert input_schema(BY_NAME["settle_purchase"])["required"] == ["purchaseId", "settledDate"]
+    for name in ("list_account_balances", "get_account_balance"):
+        assert "date" in input_schema(BY_NAME[name])["required"]
+    assert "transactionType" in BY_NAME["list_journal_entries"].filters
+    assert "type" in BY_NAME["list_transactions"].filters

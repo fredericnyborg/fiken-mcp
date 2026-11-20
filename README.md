@@ -5,7 +5,7 @@ sitt eget Fiken via OAuth, og får alle Fiken-endepunktene som MCP-verktøy.
 
 - **URL:** `https://fiken-mcp.autoajour.no/mcp` (streamable HTTP)
 - **Stack:** Python 3.11, FastMCP (offisiell `mcp`-SDK under), asyncpg, Postgres (nysky-datastore)
-- **Verktøy:** 157 stk – 152 genereres 1:1 fra endepunkter i `app/endpoints.py`, pluss
+- **Verktøy:** 161 stk – 156 genereres 1:1 fra endepunkter i `app/endpoints.py`, pluss
   `fiken_get` (rå GET), `list_attachments` / `add_attachment` / `delete_attachment` og
   `create_inbox_document`. Svarene er Fikens JSON uendret. Beløp i øre.
 
@@ -87,6 +87,14 @@ Claude ──/mcp Bearer──▶ verktøy → Fiken API med brukerens token (fo
 | `app/tools.py` | Verktøygenerering + spesialverktøy + bilagsbalanse |
 | `app/vault.py` | AES-256-GCM |
 | `migrations.sql` | Idempotent skjema (kjøres av `release_command`) |
+
+## Holde verktøyene i takt med Fiken
+
+```bash
+curl -so /tmp/fiken.yaml https://api.fiken.no/api/v2/docs/swagger.yaml
+uv run python scripts/compare_spec.py /tmp/fiken.yaml
+```
+Viser manglende/utgåtte endepunkter og avvik i parametere. Sist synket 2026-11-20 (Fiken API 2.0.0: OK).
 
 ## Utvikling
 
