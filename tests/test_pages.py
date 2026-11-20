@@ -29,3 +29,16 @@ def test_robots_and_sitemap():
     sm = c.get("/sitemap.xml")
     assert sm.status_code == 200
     assert "<loc>" in sm.text
+
+
+def test_privacy_and_help_pages():
+    c = _client()
+    for path, needle in (("/personvern", "behandlingsansvarlig"), ("/privacy", "English summary"),
+                         ("/hjelp", "Feilsøking"), ("/help", "Support")):
+        r = c.get(path)
+        assert r.status_code == 200, path
+        assert needle in r.text, path
+        assert main.config.SUPPORT_EMAIL in r.text
+        assert "noindex" not in r.text
+    assert "/personvern" in c.get("/sitemap.xml").text
+    assert "href='/personvern'" in c.get("/").text

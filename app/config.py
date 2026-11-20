@@ -31,3 +31,8 @@ def _require(name: str) -> str:
     if not value:
         raise RuntimeError(f"{name} er ikke satt (server-secret).")
     return value
+
+
+# Utgiver/behandlingsansvarlig – vises på /personvern og /hjelp (krav i Claude-katalogen).
+PUBLISHER = "Autoajour AS"
+SUPPORT_EMAIL = "support@autoajour.no"

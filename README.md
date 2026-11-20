@@ -9,6 +9,15 @@ sitt eget Fiken via OAuth, og får alle Fiken-endepunktene som MCP-verktøy.
   `fiken_get` (rå GET), `list_attachments` / `add_attachment` / `delete_attachment` og
   `create_inbox_document`. Svarene er Fikens JSON uendret. Beløp i øre.
 
+## Claude-katalogen
+
+Klar for innsending som offisiell connector: se [`docs/claude-katalog.md`](docs/claude-katalog.md)
+(krav, listing-tekster, eksempelprompter, testkonto). Offentlige sider:
+[`/hjelp`](https://fiken-mcp.autoajour.no/hjelp) og
+[`/personvern`](https://fiken-mcp.autoajour.no/personvern) (`app/legal.py`). Alle verktøy har
+`title` + `readOnlyHint`/`destructiveHint`; `send_*` er i tillegg `openWorldHint`.
+**Endres lagring/logging, oppdater `app/legal.py` i samme PR.**
+
 ## Koble til (sluttbruker)
 
 Claude → Innstillinger → Connectors → *Legg til egendefinert* → `https://fiken-mcp.autoajour.no/mcp`.
@@ -20,7 +29,7 @@ Ingen egen konto trengs: Fiken-innloggingen er identiteten.
 
 `https://fiken-mcp.autoajour.no/konto` – logg inn med Fiken, se hvilke MCP-klienter som har
 tilgang (navn, retur-domene, tilkoblet/sist brukt), trekk tilbake én, eller «Koble fra alt»
-(trekker alle og sletter lagrede Fiken-tokens). Innloggingen går via samme `/fiken/callback`
+(trekker alle og sletter brukeren: Fiken-tokens, e-post/navn og tilkoblinger). Innloggingen går via samme `/fiken/callback`
 med `state` = `web_<nonce>.<hmac>` + nettleserbundet cookie; sesjonen er en HMAC-signert
 cookie (1 t). POST-skjemaene krever same-origin + CSRF-token. Fiken-brukere uten tilkoblinger
 lagres ikke.
@@ -70,6 +79,7 @@ Claude ──/mcp Bearer──▶ verktøy → Fiken API med brukerens token (fo
 | `app/account.py` | Kontosiden: innlogging, sesjon, oversikt, tilbaketrekking |
 | `app/admin.py` | Statistikk-API for Autoajour + telling av verktøykall |
 | `app/pages.py` | Felles HTML-mal (Autoajour-stil) |
+| `app/legal.py` | Personvern (`/personvern`) og hjelp/support (`/hjelp`) |
 | `app/mcp_auth.py` | OAuth-server for MCP-klienter + Fiken-innlogging |
 | `app/fiken_oauth.py` | Fiken OAuth: state, authorize-URL, token/refresh, token-blob |
 | `app/fiken_client.py` | Fiken API-klient: token-fornyelse, serialisering, retry, paginering |

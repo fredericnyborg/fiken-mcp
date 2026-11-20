@@ -31,7 +31,7 @@ from starlette.responses import (
     Response,
 )
 
-from app import account, admin, config, fiken_oauth, pages, tools
+from app import account, admin, config, fiken_oauth, legal, pages, tools
 from app.mcp_auth import (
     CSRF_COOKIE,
     LOGIN_COOKIE,
@@ -257,8 +257,8 @@ async def account_page(request: Request) -> Response:
     extra = (
         f"{rows}"
         "<h2>Koble fra alt</h2>"
-        "<p class=muted>Trekker alle tilkoblinger og sletter Fiken-tilgangen vi har lagret. Du kan også "
-        "fjerne appen i Fiken under Brukerinnstillinger → API.</p>"
+        "<p class=muted>Trekker alle tilkoblinger og sletter alt vi har lagret om deg (Fiken-tilgang, "
+        "e-post og navn). Du kan også fjerne appen i Fiken under Brukerinnstillinger → API.</p>"
         f"<form method=post action='/konto/disconnect'>{hidden}<div class=row>"
         "<button class='btn btn-danger'>Koble fra alt og slett data</button></div></form>"
         f"<form method=post action='/konto/logout'>{hidden}<div class=row>"
@@ -376,7 +376,7 @@ skrivetilgang</b> til regnskapet ditt i Fiken.</p>
 </ul>
 
 <div class=row><a class='btn btn-primary' href='/konto'>Mine tilkoblinger</a>
-<a class='btn btn-outline' href='https://autoajour.no'>Om Autoajour</a></div>
+<a class='btn btn-outline' href='/hjelp'>Hjelp og support</a></div>
 """
 
 
@@ -424,6 +424,32 @@ async def index(_: Request) -> Response:
     return HTMLResponse(page, headers=headers)
 
 
+def _public_page(title: str, body: str, description: str) -> Response:
+    page = pages.render(
+        title, body, description=description, indexable=True,
+        head_title=f"{title} – Fiken MCP", wide=True,
+    )
+    return HTMLResponse(page, headers={**SECURITY_HEADERS, "Cache-Control": "public, max-age=3600"})
+
+
+@mcp.custom_route("/personvern", methods=["GET"])
+@mcp.custom_route("/privacy", methods=["GET"])
+async def privacy(_: Request) -> Response:
+    return _public_page(
+        "Personvern", legal.privacy_html(),
+        "Personvernerklæring for Fiken MCP: hva som lagres, hvor lenge og hvordan du sletter det.",
+    )
+
+
+@mcp.custom_route("/hjelp", methods=["GET"])
+@mcp.custom_route("/help", methods=["GET"])
+async def help_page(_: Request) -> Response:
+    return _public_page(
+        "Hjelp og support", legal.help_html(),
+        "Slik kobler du Claude til Fiken, eksempler, feilsøking og support for Fiken MCP.",
+    )
+
+
 @mcp.custom_route("/robots.txt", methods=["GET"])
 async def robots(_: Request) -> Response:
     body = (
@@ -433,6 +459,8 @@ async def robots(_: Request) -> Response:
         "Disallow: /consent/\n"
         "Disallow: /fiken/\n"
         "Disallow: /admin/\n"
+        "Allow: /personvern\n"
+        "Allow: /hjelp\n"
         "Disallow: /mcp\n"
         f"\nSitemap: {config.public_url()}/sitemap.xml\n"
     )
@@ -444,7 +472,10 @@ async def sitemap(_: Request) -> Response:
     body = (
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
-        f"<url><loc>{html.escape(config.public_url())}/</loc></url></urlset>"
+        + "".join(
+            f"<url><loc>{html.escape(config.public_url())}{p}</loc></url>" for p in ("/", "/hjelp", "/personvern")
+        )
+        + "</urlset>"
     )
     return Response(body, media_type="application/xml")
 
